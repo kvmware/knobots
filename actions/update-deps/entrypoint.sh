@@ -27,56 +27,6 @@ chown -R --reference=. main
 # https://github.com/git/git/commit/8959555cee7ec045958f9b6dd62e541affb7e7d9
 
 cd main
-
-# Determine the name of the go module.
-if [[ -f go.mod ]]; then
-    export MODULE_NAME=$(go mod graph | cut -d' ' -f 1 | grep -v '@' | head -1)
-
-    # TODO(mattmoor): Move this into `./hack/update-codegen.sh`
-    TMP_DIR="$(mktemp -d)"
-    export GOPATH=${GOPATH:-${TMP_DIR}}
-    export PATH="${PATH}:${TMP_DIR}/bin"
-    TMP_REPO_PATH="${TMP_DIR}/src/${MODULE_NAME}"
-    mkdir -p "$(dirname "${TMP_REPO_PATH}")" && ln -s "${GITHUB_WORKSPACE}" "${TMP_REPO_PATH}"
-
-    releaseFlags=()
-    # Test to see if this module is using the knative.dev/hack repo, if it is,
-    # then we know it is safe to pass down the release flag.
-    if [[ $(buoy needs go.mod --domain knative.dev | grep knative.dev/hack) ]]; then
-      releaseFlags+=("--release ${RELEASE} --module-release ${MODULE_RELEASE}")
-    fi
-
-    echo "::set-output name=update-dep-cmd::./hack/update-deps.sh --upgrade ${releaseFlags[@]}"
-    ./hack/update-deps.sh --upgrade ${releaseFlags[@]}
-    # capture logs for the module changes
-    deplog=$(modlog . HEAD dirty || true)
-    deplog="${deplog//$'\n'/'%0A'}"
-    deplog="${deplog//$'\r'/'%0D'}"
-fi
-
-# We may pull in code-generator updates, or not have generated code.
-[[ ! -f hack/update-codegen.sh ]] || ./hack/update-codegen.sh
-
-# If we don't run this before the "git diff-index" it seems to list
-# every file that's been touched by codegen.
-git status
-create_pr="false"
-if [[ "${FORCE_DEPS}" == "true" ]]; then
-  create_pr="true"
-fi
-for x in $(git diff-index --name-only HEAD --); do
-    if [ "$(basename $x)" = "go.mod" ]; then
-        continue
-    elif [ "$(basename $x)" = "go.sum" ]; then
-        continue
-    elif [ "$(basename $x)" = "modules.txt" ]; then
-        continue
-    fi
-    echo "Found non-module diff: $x"
-    create_pr="true"
-    break
-done
-
-echo "create_pr=${create_pr}" >> $GITHUB_ENV
-
+echo "::set-output name=update-dep-cmd::./hack/update-deps.sh --upgrade ${releaseFlags[@]}"
+deplog=`git status`
 echo "::set-output name=log::$deplog"
